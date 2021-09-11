@@ -18,13 +18,13 @@ import (
 
 func TestRegister(t *testing.T) {
 	cfg := config.ServiceConfig{
-		// Endpoints: []*config.EndpointConfig{
-		// 	{
-		// 		Endpoint: "/",
-		// 		Method:   "GET",
-		// 		Timeout:  1 * time.Second,
-		// 	},
-		// },
+		Endpoints: []*config.EndpointConfig{
+			{
+				Endpoint: "/",
+				Method:   "GET",
+				Timeout:  1 * time.Second,
+			},
+		},
 		ExtraConfig: config.ExtraConfig{
 			krakend.Namespace: map[string]interface{}{
 				"denylist":  []interface{}{"a", "b"},

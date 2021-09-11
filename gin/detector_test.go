@@ -3,9 +3,11 @@ package gin
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	krakend "github.com/badboyd/krakend-botdetector/krakend"
 	"github.com/gin-gonic/gin"
@@ -19,8 +21,16 @@ func TestRegister(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	engine := gin.New()
+	engine.RedirectTrailingSlash = false
 
 	cfg := config.ServiceConfig{
+		Endpoints: []*config.EndpointConfig{
+			{
+				Endpoint: "/",
+				Method:   "GET",
+				Timeout:  1 * time.Second,
+			},
+		},
 		ExtraConfig: config.ExtraConfig{
 			krakend.Namespace: map[string]interface{}{
 				"denylist":  []interface{}{"a", "b"},
@@ -48,8 +58,12 @@ func TestNew(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	engine := gin.New()
+	engine.RedirectTrailingSlash = false
 
 	cfg := &config.EndpointConfig{
+		Endpoint: "/",
+		Method:   "GET",
+		Timeout:  1 * time.Second,
 		ExtraConfig: config.ExtraConfig{
 			krakend.Namespace: map[string]interface{}{
 				"denylist":  []interface{}{"a", "b"},
@@ -80,13 +94,14 @@ func testDetection(engine *gin.Engine) error {
 		"c",
 		"Pingdom.com_bot_version_1.1",
 	} {
-		req, _ := http.NewRequest("GET", "http://example.com", nil)
+		req, _ := http.NewRequest("GET", "http://example.com/", nil)
 		req.Header.Add("User-Agent", ua)
 
 		w := httptest.NewRecorder()
 		engine.ServeHTTP(w, req)
 
 		if w.Result().StatusCode != 200 {
+			log.Println(w.Result().StatusCode)
 			return fmt.Errorf("the req #%d has been detected as a bot: %s", i, ua)
 		}
 	}
@@ -97,13 +112,14 @@ func testDetection(engine *gin.Engine) error {
 		"facebookexternalhit/1.1",
 		"Pingdom.com_bot_version_1.2",
 	} {
-		req, _ := http.NewRequest("GET", "http://example.com", nil)
+		req, _ := http.NewRequest("GET", "http://example.com/", nil)
 		req.Header.Add("User-Agent", ua)
 
 		w := httptest.NewRecorder()
 		engine.ServeHTTP(w, req)
 
 		if w.Result().StatusCode != http.StatusForbidden {
+			log.Println(w.Result().StatusCode)
 			return fmt.Errorf("the req #%d has not been detected as a bot: %s", i, ua)
 		}
 	}
