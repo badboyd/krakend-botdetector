@@ -1,4 +1,4 @@
-package gin
+package mux
 
 import (
 	"errors"
@@ -6,35 +6,38 @@ import (
 
 	botdetector "github.com/badboyd/krakend-botdetector"
 	krakend "github.com/badboyd/krakend-botdetector/krakend"
-	"github.com/gin-gonic/gin"
 	"github.com/luraproject/lura/config"
 	"github.com/luraproject/lura/logging"
 	"github.com/luraproject/lura/proxy"
-	krakendgin "github.com/luraproject/lura/router/gin"
+	krakendmux "github.com/luraproject/lura/router/mux"
 )
 
+type middleware struct {
+	f botdetector.DetectorFunc
+}
+
 // Register checks the configuration and, if required, registers a bot detector middleware at the gin engine
-func Register(cfg config.ServiceConfig, l logging.Logger, engine *gin.Engine) {
+func NewMiddleware(cfg config.ServiceConfig, l logging.Logger) *middleware {
 	detectorCfg, err := krakend.ParseConfig(cfg.ExtraConfig)
 	if err == krakend.ErrNoConfig {
 		l.Debug("botdetector middleware: ", err.Error())
-		return
+		return nil
 	}
 	if err != nil {
 		l.Warning("botdetector middleware: ", err.Error())
-		return
+		return nil
 	}
 	d, err := botdetector.New(detectorCfg)
 	if err != nil {
 		l.Warning("botdetector middleware: unable to createt the LRU detector:", err.Error())
-		return
+		return nil
 	}
-	engine.Use(middleware(d))
+	return &middleware{d}
 }
 
 // New checks the configuration and, if required, wraps the handler factory with a bot detector middleware
-func New(hf krakendgin.HandlerFactory, l logging.Logger) krakendgin.HandlerFactory {
-	return func(cfg *config.EndpointConfig, p proxy.Proxy) gin.HandlerFunc {
+func New(hf krakendmux.HandlerFactory, l logging.Logger) krakendmux.HandlerFactory {
+	return func(cfg *config.EndpointConfig, p proxy.Proxy) http.HandlerFunc {
 		next := hf(cfg, p)
 
 		detectorCfg, err := krakend.ParseConfig(cfg.ExtraConfig)
@@ -56,25 +59,23 @@ func New(hf krakendgin.HandlerFactory, l logging.Logger) krakendgin.HandlerFacto
 	}
 }
 
-func middleware(f botdetector.DetectorFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if f(c.Request) {
-			c.AbortWithError(http.StatusForbidden, errBotRejected)
+func (m *middleware) Handler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if m.f(r) {
+			http.Error(w, errBotRejected.Error(), http.StatusForbidden)
 			return
 		}
-
-		c.Next()
-	}
+		h.ServeHTTP(w, r)
+	})
 }
 
-func handler(f botdetector.DetectorFunc, next gin.HandlerFunc) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if f(c.Request) {
-			c.AbortWithError(http.StatusForbidden, errBotRejected)
+func handler(f botdetector.DetectorFunc, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if f(r) {
+			http.Error(w, errBotRejected.Error(), http.StatusForbidden)
 			return
 		}
-
-		next(c)
+		next(w, r)
 	}
 }
 

@@ -1,4 +1,4 @@
-package gin
+package mux
 
 import (
 	"context"
@@ -6,21 +6,25 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	krakend "github.com/badboyd/krakend-botdetector/krakend"
-	"github.com/gin-gonic/gin"
+	gorilla "github.com/gorilla/mux"
 	"github.com/luraproject/lura/config"
 	"github.com/luraproject/lura/logging"
 	"github.com/luraproject/lura/proxy"
-	krakendgin "github.com/luraproject/lura/router/gin"
+	krakendmux "github.com/luraproject/lura/router/mux"
 )
 
 func TestRegister(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	engine := gin.New()
-
 	cfg := config.ServiceConfig{
+		// Endpoints: []*config.EndpointConfig{
+		// 	{
+		// 		Endpoint: "/",
+		// 		Method:   "GET",
+		// 		Timeout:  1 * time.Second,
+		// 	},
+		// },
 		ExtraConfig: config.ExtraConfig{
 			krakend.Namespace: map[string]interface{}{
 				"denylist":  []interface{}{"a", "b"},
@@ -33,11 +37,17 @@ func TestRegister(t *testing.T) {
 		},
 	}
 
-	Register(cfg, logging.NoOp, engine)
+	engine := gorilla.NewRouter()
 
-	engine.GET("/", func(c *gin.Context) {
-		c.String(200, "hi!")
-	})
+	bdMw := NewMiddleware(cfg, logging.NoOp)
+	if bdMw != nil {
+		engine.Use(bdMw.Handler)
+	}
+
+	engine.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		w.Write([]byte("hi!"))
+	}).Methods("GET")
 
 	if err := testDetection(engine); err != nil {
 		t.Error(err)
@@ -45,11 +55,10 @@ func TestRegister(t *testing.T) {
 }
 
 func TestNew(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
-	engine := gin.New()
-
 	cfg := &config.EndpointConfig{
+		Endpoint: "/",
+		Method:   "GET",
+		Timeout:  1 * time.Second,
 		ExtraConfig: config.ExtraConfig{
 			krakend.Namespace: map[string]interface{}{
 				"denylist":  []interface{}{"a", "b"},
@@ -61,26 +70,26 @@ func TestNew(t *testing.T) {
 			},
 		},
 	}
-
+	engine := gorilla.NewRouter()
 	proxyfunc := func(_ context.Context, _ *proxy.Request) (*proxy.Response, error) {
 		return &proxy.Response{IsComplete: true}, nil
 	}
 
-	engine.GET("/", New(krakendgin.EndpointHandler, logging.NoOp)(cfg, proxyfunc))
+	engine.HandleFunc("/", New(krakendmux.EndpointHandler, logging.NoOp)(cfg, proxyfunc)).Methods("GET")
 
 	if err := testDetection(engine); err != nil {
 		t.Error(err)
 	}
 }
 
-func testDetection(engine *gin.Engine) error {
+func testDetection(engine *gorilla.Router) error {
 	for i, ua := range []string{
 		"abcd",
 		"",
 		"c",
 		"Pingdom.com_bot_version_1.1",
 	} {
-		req, _ := http.NewRequest("GET", "http://example.com", nil)
+		req, _ := http.NewRequest("GET", "http://example.com/", nil)
 		req.Header.Add("User-Agent", ua)
 
 		w := httptest.NewRecorder()
@@ -97,7 +106,7 @@ func testDetection(engine *gin.Engine) error {
 		"facebookexternalhit/1.1",
 		"Pingdom.com_bot_version_1.2",
 	} {
-		req, _ := http.NewRequest("GET", "http://example.com", nil)
+		req, _ := http.NewRequest("GET", "http://example.com/", nil)
 		req.Header.Add("User-Agent", ua)
 
 		w := httptest.NewRecorder()

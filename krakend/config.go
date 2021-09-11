@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	botdetector "github.com/devopsfaith/krakend-botdetector"
+	botdetector "github.com/badboyd/krakend-botdetector"
 	"github.com/luraproject/lura/config"
 )
 
